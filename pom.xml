@@ -36,6 +36,8 @@
             <scope>runtime</scope>
             <version>5.1.47</version>
         </dependency>
+
+<!--        提供方便注解-->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
