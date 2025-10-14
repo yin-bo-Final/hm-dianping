@@ -74,7 +74,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         //另外加的 黑马没讲的
         //如果用户用一个手机号来请求验证码 有了验证码之后将手机号改了 会出现新建用户的漏洞
         //这里来保证申请验证码的手机号和提交的手机号一致
-        if(session.getAttribute("phone")!=phone){
+        if(!session.getAttribute("phone").equals(phone)){
             return Result.fail("申请验证码的手机号和当前手机号不符");
         }
         session.removeAttribute("code");
