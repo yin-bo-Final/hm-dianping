@@ -11,6 +11,7 @@ import com.hmdp.service.IUserInfoService;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.RegexUtils;
 import com.hmdp.utils.UserHolder;
+import com.sun.xml.internal.txw2.output.ResultFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -62,7 +63,8 @@ public class UserController {
      */
     @PostMapping("/logout")
     public Result logout(){
-        return Result.fail("功能未完成");
+        UserHolder.removeUser();
+        return Result.ok();
     }
 
 

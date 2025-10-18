@@ -26,14 +26,12 @@ public class ShopController {
     @Resource
     public IShopService shopService;
 
-    /**
-     * 根据id查询商铺信息
-     * @param id 商铺id
-     * @return 商铺详情数据
-     */
+
     @GetMapping("/{id}")
     public Result queryShopById(@PathVariable("id") Long id) {
-        return Result.ok(shopService.getById(id));
+        //getById是IService接口里的方法  是MyBatisPlus提供的接口
+        //所以这里直接向前端返回数据库里的数据
+        return shopService.queryById(id);
     }
 
     /**
