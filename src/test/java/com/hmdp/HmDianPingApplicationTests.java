@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import javax.annotation.Resource;
+import java.math.BigInteger;
+import java.util.Scanner;
 import java.util.concurrent.*;
 
 import static com.hmdp.utils.RedisConstants.*;
@@ -24,7 +26,7 @@ class HmDianPingApplicationTests {
     @Resource
     private RedisIdWorker redisIdWorker;
 
-    private ExecutorService es = Executors.newFixedThreadPool(500);
+    private final ExecutorService es = Executors.newFixedThreadPool(500);
 
 
     @Test
@@ -55,4 +57,20 @@ class HmDianPingApplicationTests {
     }
 
 
+
+    @Test
+    void main111(){
+
+        Scanner scanner = new Scanner(System.in);
+        String oct1 = scanner.next();
+        String oct2 = scanner.next();
+
+        BigInteger a = new BigInteger(oct1,8);
+        BigInteger b = new BigInteger(oct2,8);
+
+        BigInteger rsult = a.subtract(b);
+
+        System.out.println(rsult.toString(8));
+
+    }
 }
