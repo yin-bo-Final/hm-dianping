@@ -11,18 +11,12 @@ import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
 
-/**
- * <p>
- *  服务实现类
- * </p>
- *
- * @author 虎哥
- * @since 2021-12-22
- */
+@Transactional
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
     //查询秒杀全ID 所以要注入秒杀券信息
@@ -55,9 +49,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
         //5. 扣减库存
         boolean success = seckillVoucherService.update()        // 1. 开始更新操作
-                .setSql("stock = stock - 1")                    // 2. 设置更新的SQL片段
-                .eq("voucher_id", voucherId)            // 3. WHERE条件：指定优惠券ID
-                .gt("stock", 0)                    // 4. WHERE条件：库存必须大于0
+                .setSql("stock = stock - 1")                    // 2. 设置更新的SQL片段  set stock = stock - 1
+                .eq("voucher_id", voucherId)            // 3. WHERE条件：指定优惠券ID  where voucher_id = voucherId
+                .gt("stock", 0)                    // 4. WHERE条件：库存必须大于0      where stock > 0
                 .update();                                      // 5. 执行更新，返回是否成功
 
         if (!success) {                                         // 6. 判断更新结果
