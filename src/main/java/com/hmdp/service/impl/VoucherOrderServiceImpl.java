@@ -8,9 +8,11 @@ import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
+import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private ISeckillVoucherService seckillVoucherService;
     @Resource
     private RedisIdWorker redisIdWorker;
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
 
     @Override
     public Result seckillVoucher(Long voucherId) {
@@ -51,15 +56,25 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
 
 
-        //再这里加同步锁就是先获取锁，再执行createVoucherOrder函数去完成下单函数
-        //等函数执行完也就是事务提交了，这时再释放锁
+
         Long userId = UserHolder.getUser().getId();
-        synchronized (userId.toString().intern()) {
-            //这里代理对象是这个接口的代理对象
-            IVoucherOrderService proxy = (IVoucherOrderService)AopContext.currentProxy();
-            //要调用代理的createVoucherOrder,要在接口中创建这个函数
-            return proxy.createVoucherOrder(voucherId);
+        //尝试去创建锁对象
+        //业务是这个用户是否重复下单，所以锁id可以加上用户id
+        SimpleRedisLock lock = new SimpleRedisLock("order:" + userId, stringRedisTemplate);
+        //获取锁对象
+        boolean isGetLock = lock.tryLock(120);
+        if (!isGetLock) {
+            return Result.fail("不允许抢多张优惠券");
         }
+        try {
+            // 获取代理对象
+            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrder(voucherId);
+        } finally {
+            // 释放锁
+            lock.unlock();
+        }
+
     }
 
 
