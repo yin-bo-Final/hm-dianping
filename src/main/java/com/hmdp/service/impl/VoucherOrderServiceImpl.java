@@ -9,6 +9,7 @@ import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
+import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
 
-@Transactional
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
     //查询秒杀全ID 所以要注入秒杀券信息
@@ -47,32 +47,68 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("该优惠券已售罄");
         }
 
-        //5. 扣减库存
-        boolean success = seckillVoucherService.update()        // 1. 开始更新操作
-                .setSql("stock = stock - 1")                    // 2. 设置更新的SQL片段  set stock = stock - 1
-                .eq("voucher_id", voucherId)            // 3. WHERE条件：指定优惠券ID  where voucher_id = voucherId
-                .gt("stock", 0)                    // 4. WHERE条件：库存必须大于0      where stock > 0
-                .update();                                      // 5. 执行更新，返回是否成功
 
-        if (!success) {                                         // 6. 判断更新结果
-            return Result.fail("库存不足");             // 7. 更新失败，返回库存不足
+
+
+
+        //再这里加同步锁就是先获取锁，再执行createVoucherOrder函数去完成下单函数
+        //等函数执行完也就是事务提交了，这时再释放锁
+        Long userId = UserHolder.getUser().getId();
+        synchronized (userId.toString().intern()) {
+            //这里代理对象是这个接口的代理对象
+            IVoucherOrderService proxy = (IVoucherOrderService)AopContext.currentProxy();
+            //要调用代理的createVoucherOrder,要在接口中创建这个函数
+            return proxy.createVoucherOrder(voucherId);
         }
-        //6. 创建订单
-        VoucherOrder voucherOrder = new VoucherOrder();
-        //设置订单id
-        Long orderId = redisIdWorker.nextId("order");
+    }
+
+
+    @Transactional
+    public Result createVoucherOrder(Long voucherId) {
+        //5. 判断用户是否重复下单
         //从ThreadLocal中获得用户id
         Long userId = UserHolder.getUser().getId();
 
-        //设置代金券id
-        voucherOrder.setVoucherId(voucherId);
-        voucherOrder.setId(orderId);
-        voucherOrder.setUserId(userId);
 
-        //7. 将订单保存到数据库
-        save(voucherOrder);
+            //5.1 根据userId和voucherId来查询订单
+            Integer count = query()
+                    .eq("user_id", userId)
+                    .eq("voucher_id", voucherId).count();
 
-        //8. 返回订单ID
-        return Result.ok(orderId);
-    }
+
+            //5.2 判断是否存在
+            //如果存在
+            if (count > 0) {
+                return Result.fail("您已经抢购过该秒杀券!");
+            }
+
+
+            //6. 扣减库存
+            boolean success = seckillVoucherService.update()        // 1. 开始更新操作
+                    .setSql("stock = stock - 1")                    // 2. 设置更新的SQL片段  set stock = stock - 1
+                    .eq("voucher_id", voucherId)            // 3. WHERE条件：指定优惠券ID  where voucher_id = voucherId
+                    .gt("stock", 0)                    // 4. WHERE条件：库存必须大于0      where stock > 0
+                    .update();                                      // 5. 执行更新，返回是否成功
+
+            if (!success) {                                         // 6. 判断更新结果
+                return Result.fail("库存不足");
+            }
+
+
+            //7. 创建订单
+            VoucherOrder voucherOrder = new VoucherOrder();
+
+            //设置订单id
+            Long orderId = redisIdWorker.nextId("order");
+            //设置代金券id
+            voucherOrder.setVoucherId(voucherId);
+            voucherOrder.setId(orderId);
+            voucherOrder.setUserId(userId);
+
+            //8. 将订单保存到数据库
+            save(voucherOrder);
+
+            //9. 返回订单ID
+            return Result.ok(orderId);
+        }
 }
