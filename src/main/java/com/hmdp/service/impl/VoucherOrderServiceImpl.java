@@ -62,7 +62,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         //业务是这个用户是否重复下单，所以锁id可以加上用户id
         SimpleRedisLock lock = new SimpleRedisLock("order:" + userId, stringRedisTemplate);
         //获取锁对象
-        boolean isGetLock = lock.tryLock(120);
+        boolean isGetLock = lock.tryLock(1200);
         if (!isGetLock) {
             return Result.fail("不允许抢多张优惠券");
         }
