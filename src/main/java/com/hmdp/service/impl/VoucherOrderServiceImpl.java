@@ -10,6 +10,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -29,6 +31,10 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private RedissonClient redissonClient;
+
 
     @Override
     public Result seckillVoucher(Long voucherId) {
@@ -56,13 +62,15 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
 
 
-
         Long userId = UserHolder.getUser().getId();
         //尝试去创建锁对象
         //业务是这个用户是否重复下单，所以锁id可以加上用户id
-        SimpleRedisLock lock = new SimpleRedisLock("order:" + userId, stringRedisTemplate);
+
+        RLock lock = redissonClient.getLock("order:" + userId);
+
         //获取锁对象
-        boolean isGetLock = lock.tryLock(1200);
+        //无参 失败不等待直接返回false 租约30s
+        boolean isGetLock = lock.tryLock();
         if (!isGetLock) {
             return Result.fail("不允许抢多张优惠券");
         }

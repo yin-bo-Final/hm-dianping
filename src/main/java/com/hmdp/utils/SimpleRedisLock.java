@@ -2,10 +2,14 @@ package com.hmdp.utils;
 
 import cn.hutool.core.lang.UUID;
 import io.netty.util.internal.StringUtil;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.util.StringUtils;
 
 
+import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
 public class SimpleRedisLock implements ILock{
@@ -28,7 +32,13 @@ public class SimpleRedisLock implements ILock{
     private static final String KEY_PREFIX = "lock:";
     //锁的线程标识的前缀
     private static final String ID_PREFIX = UUID.randomUUID().toString(true) + "-";
-
+    //多线程锁的脚本
+    public static final DefaultRedisScript<Long> UNLOCK_SCRIPT;
+    static{
+        UNLOCK_SCRIPT = new DefaultRedisScript<>();
+        UNLOCK_SCRIPT.setLocation(new ClassPathResource("LuaScript/Unlock.lua"));
+        UNLOCK_SCRIPT.setResultType(Long.class);
+    }
 
     @Override
     public boolean tryLock(long timeoutSec) {
@@ -43,7 +53,19 @@ public class SimpleRedisLock implements ILock{
         return Boolean.TRUE.equals(isGetLock);
     }
 
-    @Override
+
+@Override
+    public void unlock() {
+    //调用Lua脚本
+    //因为KEYS必须要是一个LIST  而我们锁的key是一个字符串 所以这里用Collections.singletonList方法来将key变成单一元素的数组
+    stringRedisTemplate.execute(
+            UNLOCK_SCRIPT,
+            Collections.singletonList(KEY_PREFIX + name),
+            ID_PREFIX + Thread.currentThread().getId());
+    }
+
+
+/*    @Override
     public void unlock() {
         //获取线程标识
         String threadId = ID_PREFIX + Thread.currentThread().getId();
@@ -56,5 +78,5 @@ public class SimpleRedisLock implements ILock{
             stringRedisTemplate.delete(KEY_PREFIX + name);
         }
 
-    }
+    }*/
 }
