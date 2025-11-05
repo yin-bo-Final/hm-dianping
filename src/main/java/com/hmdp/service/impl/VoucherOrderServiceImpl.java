@@ -14,12 +14,15 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.Collections;
 
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
@@ -35,8 +38,33 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private RedissonClient redissonClient;
 
+    //消息队列的脚本的脚本
+    public static final DefaultRedisScript<Long> SECKILL_SCRIPT;
+    static{
+        SECKILL_SCRIPT = new DefaultRedisScript<>();
+        SECKILL_SCRIPT.setLocation(new ClassPathResource("LuaScript/seckill.lua"));
+        SECKILL_SCRIPT.setResultType(Long.class);
+    }
 
     @Override
+    public Result seckillVoucher(Long voucherId) {
+        //1. 执行lua脚本
+        Long result = stringRedisTemplate.execute(SECKILL_SCRIPT,
+                Collections.emptyList(), voucherId.toString(),
+                UserHolder.getUser().getId().toString());
+        //2. 判断返回值，并返回错误信息
+        if (result.intValue() != 0) {
+            return Result.fail(result.intValue() == 1 ? "库存不足" : "不能重复下单");
+        }
+        long orderId = redisIdWorker.nextId("order");
+        //TODO 保存阻塞队列
+
+        //3. 返回订单id
+        return Result.ok(orderId);
+    }
+
+
+    /*@Override
     public Result seckillVoucher(Long voucherId) {
         //1. 查询秒杀券
             //因为优惠券和秒杀券ID相同 所以这里可以直接使用优惠券ID
@@ -83,7 +111,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             lock.unlock();
         }
 
-    }
+    }*/
 
 
     @Transactional
