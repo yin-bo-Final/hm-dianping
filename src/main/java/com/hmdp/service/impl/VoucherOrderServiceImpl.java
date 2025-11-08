@@ -26,50 +26,44 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * <p>
- * 服务实现类
- * </p>
- *
- * @author Kyle
- * @since 2022-10-22
- */
 @Service
 @Slf4j
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
 
     @Resource
     private ISeckillVoucherService seckillVoucherService;
-
     @Resource
     private RedisIdWorker redisIdWorker;
-
     @Resource
     private StringRedisTemplate stringRedisTemplate;
-
     @Resource
     private RedissonClient redissonClient;
 
     private IVoucherOrderService proxy;
 
 
+    //引用Lua脚本
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
-
     static {
         SECKILL_SCRIPT = new DefaultRedisScript<>();
         SECKILL_SCRIPT.setLocation(new ClassPathResource("/LuaScript/seckill.lua"));
         SECKILL_SCRIPT.setResultType(Long.class);
     }
 
+    //创建单线程  在这个线程异步执行下单逻辑
     private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
 
+    //@PostConstruct注解：在类刚初始化的时候执行被注解的命令
     @PostConstruct
+    //创建初始方法，将阻塞队列里的判断逻辑移到另外一个线程
     private void init() {
         SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandler());
     }
 
+    //创建阻塞队列
     private final BlockingQueue<VoucherOrder> orderTasks = new ArrayBlockingQueue<>(1024 * 1024);
 
+    //为下单逻辑增加分布式锁(这里在Lua脚本中已经分布式的完成了判断业务，所以无需再加分布式锁，这里可以删除)
     private void handleVoucherOrder(VoucherOrder voucherOrder) {
         //1. 获取用户
         Long userId = voucherOrder.getUserId();
@@ -90,6 +84,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
     }
 
+
+    //下单逻辑，之后塞进阻塞队列由另外一个线程执行
     private class VoucherOrderHandler implements Runnable {
         @Override
         public void run() {
@@ -106,25 +102,33 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
     }
 
+
     @Override
-    public Result seckillVoucher(Long voucherId) {
-        Long result = stringRedisTemplate.execute(
-                SECKILL_SCRIPT,
+    public Result seckillVoucher(Long voucherId) throws InterruptedException {
+        //1. 执行Lua脚本判断订单中用户是否有购买资格    并且对redis中的库存进行操作
+        Long result = stringRedisTemplate.execute(SECKILL_SCRIPT,
                 Collections.emptyList(), voucherId.toString(),
-                UserHolder.getUser().getId().toString()
-        );
+                UserHolder.getUser().getId().toString());
+
+        //2. 判断结果是否为0
         if (result.intValue() != 0) {
+            //2.1 不为0  则代表着用户没有购买资格
             return Result.fail(result.intValue() == 1 ? "库存不足" : "不能重复下单");
         }
+
+            //2.2 为0 有购买资格，生成订单ID
         long orderId = redisIdWorker.nextId("order");
-        //封装到voucherOrder中
+
+        //3. 将订单信息封装到voucherOrder中
         VoucherOrder voucherOrder = new VoucherOrder();
         voucherOrder.setVoucherId(voucherId);
         voucherOrder.setUserId(UserHolder.getUser().getId());
         voucherOrder.setId(orderId);
-        //加入到阻塞队列
-        orderTasks.add(voucherOrder);
-        //主线程获取代理对象
+
+        //4. 加入到阻塞队列
+        orderTasks.put(voucherOrder);
+
+        //5. 主线程获取代理对象
         proxy = (IVoucherOrderService) AopContext.currentProxy();
         return Result.ok(orderId);
     }
@@ -136,7 +140,10 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         Long userId = voucherOrder.getUserId();
         Long voucherId = voucherOrder.getVoucherId();
         synchronized (userId.toString().intern()) {
-            int count = query().eq("voucher_id", voucherId).eq("user_id", userId).count();
+            int count = query()
+                    .eq("voucher_id", voucherId)
+                    .eq("user_id", userId)
+                    .count();
             if (count > 0) {
                 log.error("你已经抢过优惠券了哦");
                 return;
